@@ -6,8 +6,7 @@
 // Import { prisma } wherever you need database access.
 // ============================================================
 
-import pkg from "@prisma/client";
-const { PrismaClient } = pkg;
+import { PrismaClient } from "@prisma/client/edge";
 
 // ── Singleton pattern ─────────────────────────────────────────
 // In Next.js dev mode, hot-reload creates new module instances
