@@ -1,6 +1,7 @@
 node_modules/
 .next/
 out/
+.env
 .env.local
 .env.example
 .env.development.local
@@ -13,3 +14,5 @@ Thumbs.db
 .idea/
 .vscode/
 public/uploads/
+
+/src/generated/prisma
