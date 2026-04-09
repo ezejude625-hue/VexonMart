@@ -1,20 +1,75 @@
+// ============================================================
 // GET /api/admin/stats — dashboard KPI data
-import { NextResponse } from 'next/server'
-import { query } from '@/lib/db'
-import { requireAuth } from '@/lib/auth'
+// ============================================================
+import { NextResponse } from "next/server";
+import { prisma, serialize } from "@/lib/prisma";
+import { requireAuth } from "@/lib/auth";
 
 export async function GET(req) {
-  const user = await requireAuth(req, ['admin','support'])
-  if (user instanceof NextResponse) return user
+  const user = await requireAuth(req, ["admin", "support"]);
+  if (user instanceof NextResponse) return user;
+
   try {
-    const [revenue]   = await query("SELECT COALESCE(SUM(total_amount),0) AS total, COUNT(*) AS orders FROM orders WHERE payment_status='paid' AND created_at >= DATE_SUB(NOW(),INTERVAL 30 DAY)")
-    const [lastMonth] = await query("SELECT COALESCE(SUM(total_amount),0) AS total FROM orders WHERE payment_status='paid' AND created_at BETWEEN DATE_SUB(NOW(),INTERVAL 60 DAY) AND DATE_SUB(NOW(),INTERVAL 30 DAY)")
-    const [customers] = await query("SELECT COUNT(*) AS total FROM users WHERE role_id=2 AND is_active=1")
-    const [products]  = await query("SELECT COUNT(*) AS total FROM products WHERE status='active'")
-    const revenueChange = lastMonth.total > 0 ? Math.round(((revenue.total - lastMonth.total)/lastMonth.total)*100) : 100
-    return NextResponse.json({ success:true, data: { total_revenue:revenue.total, revenue_change:revenueChange, total_orders:revenue.orders, total_customers:customers.total, total_products:products.total } })
-  } catch(err) {
-    console.error('[GET /api/admin/stats]', err)
-    return NextResponse.json({ success:false, message:'Internal server error' }, { status:500 })
+    const now = new Date();
+    const thirtyDays = new Date(now - 30 * 24 * 60 * 60 * 1000);
+    const sixtyDays = new Date(now - 60 * 24 * 60 * 60 * 1000);
+
+    // Run all queries in parallel for speed
+    const [revenueData, lastMonthData, customerCount, productCount] =
+      await Promise.all([
+        // Revenue + order count for the last 30 days
+        prisma.order.aggregate({
+          where: {
+            paymentStatus: "paid",
+            createdAt: { gte: thirtyDays },
+          },
+          _sum: { totalAmount: true },
+          _count: { id: true },
+        }),
+
+        // Revenue for the 30 days before that (for % change calc)
+        prisma.order.aggregate({
+          where: {
+            paymentStatus: "paid",
+            createdAt: { gte: sixtyDays, lt: thirtyDays },
+          },
+          _sum: { totalAmount: true },
+        }),
+
+        // Total active customer accounts
+        prisma.user.count({
+          where: { role: "customer", isActive: true },
+        }),
+
+        // Total active products listed
+        prisma.product.count({
+          where: { status: "active" },
+        }),
+      ]);
+
+    const thisRevenue = parseFloat(revenueData._sum.totalAmount || 0);
+    const lastRevenue = parseFloat(lastMonthData._sum.totalAmount || 0);
+
+    const revenueChange =
+      lastRevenue > 0
+        ? Math.round(((thisRevenue - lastRevenue) / lastRevenue) * 100)
+        : 100; // If no data last month, treat it as 100% growth
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        total_revenue: thisRevenue,
+        revenue_change: revenueChange,
+        total_orders: revenueData._count.id,
+        total_customers: customerCount,
+        total_products: productCount,
+      },
+    });
+  } catch (err) {
+    console.error("[GET /api/admin/stats]", err);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 },
+    );
   }
 }

@@ -1,47 +1,69 @@
 // ============================================================
-// POST /api/auth/login — validate credentials, return JWT cookie
+// POST /api/auth/login
 // ============================================================
-import { NextResponse } from 'next/server'
-import bcrypt from 'bcryptjs'
-import { query } from '@/lib/db'
-import { signToken, setAuthCookie } from '@/lib/auth'
+import { NextResponse } from "next/server";
+import bcrypt from "bcryptjs";
+import { prisma, serialize } from "@/lib/prisma";
+import { signToken, setAuthCookie } from "@/lib/auth";
 
 export async function POST(req) {
   try {
-    const { email, password } = await req.json()
+    const { email, password } = await req.json();
 
-    // Both fields are required
     if (!email || !password)
-      return NextResponse.json({ success:false, message:'Email and password required' }, { status:400 })
+      return NextResponse.json(
+        { success: false, message: "Email and password required" },
+        { status: 400 },
+      );
 
-    // Fetch user with role name via JOIN — one query avoids N+1
-    const rows = await query(
-      `SELECT u.*, r.name AS role
-       FROM users u JOIN roles r ON r.id = u.role_id
-       WHERE u.email = ? AND u.is_active = 1 LIMIT 1`,
-      [email.toLowerCase().trim()]
-    )
-    const user = rows[0]
+    // Find user by email — isActive must be true
+    const user = await prisma.user.findFirst({
+      where: {
+        email: email.toLowerCase().trim(),
+        isActive: true,
+      },
+    });
 
     // bcrypt.compare is constant-time — safe against timing attacks
-    if (!user || !(await bcrypt.compare(password, user.password_hash)))
-      return NextResponse.json({ success:false, message:'Invalid email or password' }, { status:401 })
+    if (!user || !(await bcrypt.compare(password, user.passwordHash)))
+      return NextResponse.json(
+        { success: false, message: "Invalid email or password" },
+        { status: 401 },
+      );
 
-    // Record last_login
-    await query('UPDATE users SET last_login = NOW() WHERE id = ?', [user.id])
+    // Record last login timestamp
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { lastLogin: new Date() },
+    });
 
-    // Sign a 7-day JWT with minimal claims
-    const token = await signToken({ userId:user.id, email:user.email, role:user.role })
+    // Sign JWT — role is already an enum string on the user record
+    const token = await signToken({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+    });
 
-    // Never expose password_hash in the response
+    // Return clean payload — never expose passwordHash
     const response = NextResponse.json({
       success: true,
-      message: 'Login successful',
-      data: { id:user.id, first_name:user.first_name, last_name:user.last_name, email:user.email, role:user.role, avatar_url:user.avatar_url },
-    })
-    return setAuthCookie(response, token)
+      message: "Login successful",
+      data: serialize({
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        role: user.role,
+        avatarUrl: user.avatarUrl,
+      }),
+    });
+
+    return setAuthCookie(response, token);
   } catch (err) {
-    console.error('[POST /api/auth/login]', err)
-    return NextResponse.json({ success:false, message:'Internal server error' }, { status:500 })
+    console.error("[POST /api/auth/login]", err);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 },
+    );
   }
 }
