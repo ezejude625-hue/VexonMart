@@ -38,7 +38,7 @@ export default function LoginPage() {
         setError(data.message || "Invalid email or password");
         return;
       }
-      localStorage.setItem("vexon_user_name", data.data.first_name);
+      localStorage.setItem("vexon_user_name", data.data.firstName);
       localStorage.setItem("vexon_user_role", data.data.role);
       router.push(data.data.role === "admin" ? "/admin" : "/dashboard");
       router.refresh();

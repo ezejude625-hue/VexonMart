@@ -58,7 +58,7 @@ export default function SignupPage() {
         setError(data.message || "Registration failed");
         return;
       }
-      localStorage.setItem("vexon_user_name", data.data.first_name);
+      localStorage.setItem("vexon_user_name", data.data.firstName);
       localStorage.setItem("vexon_user_role", "customer");
       router.push("/dashboard");
       router.refresh();
