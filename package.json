@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "postinstall": "prisma generate",
     "db:schema": "mysql -u root -p vexonmart < database/schema.sql",
     "db:seed": "node database/seed.js"
   },
